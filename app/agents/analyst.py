@@ -1,64 +1,15 @@
+import json
 import pandas as pd
+from app.llm.gemini import generate
 from app.tools.serializer import convert_to_serializable
 
-def _group_by_category(df: pd.DataFrame) -> list[dict] | None:
+
+def _calculate_stats(df: pd.DataFrame) -> dict:
     """
-    Detects if results have a text column + multiple value columns
-    and groups them into nested format.
-    Example: { artistName: "AC/DC", tracks: ["Track1", "Track2"] }
+    Pure Python stats — never use LLM for math.
     """
-    if df.empty or len(df.columns) < 2:
-        return None
-
-    text_cols = df.select_dtypes(include="object").columns.tolist()
-    other_cols = [c for c in df.columns if c not in text_cols]
-
-    # Need exactly one grouping column
-    if len(text_cols) != 1:
-        return None
-
-    group_col = text_cols[0]
-
-    # If only one other column — group its values into a list
-    if len(other_cols) == 1:
-        value_col = other_cols[0]
-        grouped = (
-            df.groupby(group_col)[value_col]
-            .apply(list)
-            .reset_index()
-        )
-        grouped.columns = [group_col, f"{value_col}s"]
-        return convert_to_serializable(
-            grouped.to_dict(orient="records")
-        )
-
-    # If multiple other columns — group full row dicts into a list
-    result = []
-    for group_val, group_df in df.groupby(group_col):
-        rows = group_df.drop(columns=[group_col]).to_dict(orient="records")
-        result.append({
-            group_col: group_val,
-            "items": convert_to_serializable(rows)
-        })
-    return result
-
-
-def analyze_results(df: pd.DataFrame) -> dict:
-    """
-    Performs deterministic calculations on query results.
-    No LLM needed — pure Python/Pandas.
-    """
-    if df.empty:
-        return {
-            "has_data": False,
-            "row_count": 0,
-            "stats": {},
-            "grouped_data": None,
-        }
-
     stats = {}
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
-    text_cols = df.select_dtypes(include="object").columns.tolist()
 
     for col in numeric_cols:
         stats[col] = {
@@ -69,23 +20,89 @@ def analyze_results(df: pd.DataFrame) -> dict:
             "median": round(float(df[col].median()), 2),
         }
 
-        if len(df) > 1:
-            total = df[col].sum()
-            if total and total > 0:
-                df = df.copy()
-                df[f"{col}_pct"] = round(df[col] / total * 100, 2)
+    return stats
 
-    top_row = convert_to_serializable(df.iloc[0].to_dict())
 
-    # Try to group results into nested format
-    grouped = _group_by_category(df)
+def _should_group(question: str, df: pd.DataFrame) -> bool:
+    """
+    Ask LLM whether the results should be grouped.
+    Only called when there are exactly two text columns
+    and zero numeric columns — otherwise grouping never makes sense.
+    """
+    text_cols = df.select_dtypes(include="object").columns.tolist()
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+    # Grouping only makes sense for pure text results
+    if len(text_cols) != 2 or len(numeric_cols) != 0:
+        return False
+
+    system = """You are a data presentation expert.
+Answer ONLY with a single word: yes or no.
+No explanation. No punctuation. Just yes or no."""
+
+    prompt = f"""The user asked: "{question}"
+
+The result has two columns: {text_cols[0]} and {text_cols[1]}
+
+Should these results be grouped so that each unique {text_cols[0]}
+has a list of its {text_cols[1]} values?
+
+Example of grouped format:
+{text_cols[0]}: "AC/DC", {text_cols[1]}s: ["Track1", "Track2"]
+
+Answer yes or no."""
+
+    response = generate(prompt, system)
+    return response.strip().lower().startswith("yes")
+
+
+def _group_results(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Groups two text columns into nested format.
+    """
+    text_cols = df.select_dtypes(include="object").columns.tolist()
+    group_col = text_cols[0]
+    value_col = text_cols[1]
+
+    grouped = (
+        df.groupby(group_col, sort=False)[value_col]
+        .apply(list)
+        .reset_index()
+    )
+    grouped.columns = [group_col, f"{value_col}s"]
+    return grouped
+
+
+def analyze_results(df: pd.DataFrame, question: str = "") -> dict:
+    """
+    Analyzes query results.
+    - Stats: always Python (accurate)
+    - Grouping: LLM decides based on question intent
+    """
+    if df.empty:
+        return {
+            "has_data": False,
+            "row_count": 0,
+            "stats": {},
+            "top_row": {},
+            "final_df": df,
+        }
+
+    # Always calculate stats with Python
+    stats = _calculate_stats(df)
+
+    # Ask LLM if grouping makes sense for this question
+    if question and _should_group(question, df):
+        final_df = _group_results(df)
+    else:
+        final_df = df
+
+    top_row = convert_to_serializable(final_df.iloc[0].to_dict())
 
     return {
         "has_data": True,
-        "row_count": int(len(df)),
-        "numeric_columns": numeric_cols,
-        "text_columns": text_cols,
+        "row_count": int(len(final_df)),
         "stats": stats,
         "top_row": top_row,
-        "grouped_data": grouped,
+        "final_df": final_df,
     }
