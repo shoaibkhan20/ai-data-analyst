@@ -8,7 +8,8 @@ from app.agents.validator import validate_and_reflect
 from app.agents.analyst import analyze_results
 from app.agents.chart_agent import decide_chart
 from app.agents.answer_agent import generate_answer
-
+# Add this import at the top
+from app.tools.serializer import serialize_dataframe, convert_to_serializable
 MAX_SQL_ATTEMPTS = 3
 
 
@@ -164,12 +165,11 @@ def run(question: str) -> dict:
             break
 
     # ── Filter sensitive columns from results ────────────────
-    raw_data = context["dataframe"].to_dict(orient="records") \
-        if not context["dataframe"].empty else []
-
+    df = context["dataframe"]
+    raw_data = serialize_dataframe(df)
     clean_data, removed_columns = filter_sensitive_columns(raw_data)
 
-    return {
+    return convert_to_serializable({
         "success": context["error"] is None,
         "question": question,
         "trace": trace,
@@ -185,4 +185,4 @@ def run(question: str) -> dict:
         "answer": context["answer"],
         "removed_columns": removed_columns,
         "error": context["error"],
-    }
+    })
