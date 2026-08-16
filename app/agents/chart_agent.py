@@ -1,12 +1,14 @@
 import json
 import pandas as pd
 from app.llm.gemini import generate
+from app.tools.chart_tool import render_chart
 
 
 def decide_chart(question: str, df: pd.DataFrame) -> dict:
     """
     Uses LLM to decide the best chart type for the data.
-    Returns a chart specification — rendering happens separately.
+    Then renders it using chart_tool.
+    Returns chart spec + rendered Plotly JSON.
     """
     if df.empty:
         return {"required": False}
@@ -45,6 +47,14 @@ What is the best chart for this data?"""
         response = "\n".join(lines[1:-1])
 
     try:
-        return json.loads(response)
+        spec = json.loads(response)
     except json.JSONDecodeError:
         return {"required": False}
+
+    # Render the chart using chart_tool
+    chart_data = render_chart(spec, df)
+
+    return {
+        "spec": spec,
+        "chart_data": chart_data
+    }
