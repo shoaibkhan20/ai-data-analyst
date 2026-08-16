@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from app.agents.planner import create_plan
+from app.tools.mysql_tool import MySQLTool
 
 app = FastAPI(
     title="AI Data Analyst",
@@ -39,3 +40,12 @@ def get_plan(request: QuestionRequest):
         "question": request.question,
         "plan": plan
     }
+
+@app.get("/api/schema", summary="View live database schema", tags=["Database"])
+def get_schema():
+    """
+    Connects to MySQL and returns the live database schema.
+    """
+    tool = MySQLTool()
+    schema = tool.get_schema()
+    return {"schema": schema}
