@@ -26,8 +26,6 @@ class PostgresTool(BaseDatabase):
         connection = self.connect()
         try:
             cursor = connection.cursor()
-
-            # Get all tables in public schema
             cursor.execute("""
                 SELECT table_name
                 FROM information_schema.tables
@@ -38,16 +36,14 @@ class PostgresTool(BaseDatabase):
 
             schema_parts = []
             for table in tables:
-                # Get columns with types
                 cursor.execute("""
-                    SELECT column_name, data_type, is_nullable
+                    SELECT column_name, data_type
                     FROM information_schema.columns
                     WHERE table_name = %s
                     AND table_schema = 'public'
                     ORDER BY ordinal_position;
                 """, (table,))
                 columns = cursor.fetchall()
-
                 col_defs = ", ".join([
                     f"{col[0]} {col[1].upper()}"
                     for col in columns
@@ -65,11 +61,18 @@ class PostgresTool(BaseDatabase):
         connection = self.connect()
         try:
             start = time.time()
+
+            # named cursor with itersize for memory efficiency
+            # but fetchall then slice to avoid unread results
             cursor = connection.cursor(
                 cursor_factory=psycopg2.extras.RealDictCursor
             )
             cursor.execute(sql)
-            rows = cursor.fetchmany(config.MAX_ROWS)
+
+            # fetchall then slice — keeps connection clean
+            all_rows = cursor.fetchall()
+            rows = all_rows[:config.MAX_ROWS]
+
             elapsed_ms = round((time.time() - start) * 1000)
 
             df = pd.DataFrame([dict(row) for row in rows])

@@ -19,8 +19,6 @@ class SQLiteTool(BaseDatabase):
         connection = self.connect()
         try:
             cursor = connection.cursor()
-
-            # Get all user tables
             cursor.execute("""
                 SELECT name FROM sqlite_master
                 WHERE type='table'
@@ -30,7 +28,7 @@ class SQLiteTool(BaseDatabase):
 
             schema_parts = []
             for table in tables:
-                cursor.execute(f"""
+                cursor.execute("""
                     SELECT sql FROM sqlite_master
                     WHERE type='table' AND name=?;
                 """, (table,))
@@ -48,14 +46,22 @@ class SQLiteTool(BaseDatabase):
             start = time.time()
             cursor = connection.cursor()
             cursor.execute(sql)
-            rows = cursor.fetchmany(config.MAX_ROWS)
+
+            # fetchall then slice — SQLite has no buffered mode
+            all_rows = cursor.fetchall()
+            rows = all_rows[:config.MAX_ROWS]
+
             elapsed_ms = round((time.time() - start) * 1000)
 
             if rows:
                 columns = [desc[0] for desc in cursor.description]
-                df = pd.DataFrame(rows, columns=columns)
+                df = pd.DataFrame(
+                    [dict(zip(columns, row)) for row in rows]
+                )
             else:
                 df = pd.DataFrame()
+
+            cursor.close()
 
             return {
                 "dataframe": df,

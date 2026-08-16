@@ -44,9 +44,16 @@ class MySQLTool(BaseDatabase):
         connection = self.connect()
         try:
             start = time.time()
-            cursor = connection.cursor(dictionary=True)
+
+            # buffered=True fixes "Unread result found" error
+            # it reads ALL results into memory immediately
+            cursor = connection.cursor(dictionary=True, buffered=True)
             cursor.execute(sql)
-            rows = cursor.fetchmany(config.MAX_ROWS)
+
+            # fetchall with limit applied in Python
+            all_rows = cursor.fetchall()
+            rows = all_rows[:config.MAX_ROWS]
+
             elapsed_ms = round((time.time() - start) * 1000)
 
             df = pd.DataFrame(rows)
