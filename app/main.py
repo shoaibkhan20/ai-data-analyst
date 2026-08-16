@@ -1,10 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from app.agents.planner import create_plan
-from app.agents.sql_agent import generate_sql
-from app.tools.mysql_tool import MySQLTool
-from app.tools.schema_tool import get_schema_for_prompt
+from app.workflow.analyst_workflow import run
 
 app = FastAPI(
     title="AI Data Analyst",
@@ -26,38 +23,25 @@ class QuestionRequest(BaseModel):
     question: str
 
 
-@app.get("/")
+# ─────────────────────────────────────────
+# ROOT
+# ─────────────────────────────────────────
+@app.get("/", tags=["Health"])
 def root():
     return {"status": "AI Data Analyst is running", "docs": "/docs"}
 
-@app.post("/api/analyze", summary="Run full analysis pipeline", tags=["Pipeline"])
+
+# ─────────────────────────────────────────
+# MAIN PIPELINE
+# ─────────────────────────────────────────
+@app.post("/api/analyze", tags=["Pipeline"], summary="Run full analysis pipeline")
 def analyze(request: QuestionRequest):
     """
-    Runs the full pipeline in sequence:
-    1. Create analysis plan
-    2. Fetch live database schema
-    3. Generate SQL from plan + schema
+    Runs all agents in sequence based on the execution plan.
+    Each agent receives the output of the previous one.
     """
-    trace = []
-
-    # Step 1 - Planner
-    trace.append("Step 1: Creating analysis plan...")
-    plan = create_plan(request.question)
-    trace.append("Step 1: Done")
-
-    # Step 2 - Schema
-    trace.append("Step 2: Fetching live database schema...")
-    schema = get_schema_for_prompt()
-    trace.append("Step 2: Done")
-
-    # Step 3 - SQL Agent
-    trace.append("Step 3: Generating SQL query...")
-    sql = generate_sql(request.question, plan)
-    trace.append("Step 3: Done")
-
-    return {
-        "question": request.question,
-        "trace": trace,
-        "plan": plan,
-        "sql": sql,
-    }
+    try:
+        result = run(request.question)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
