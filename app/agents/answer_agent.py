@@ -3,23 +3,45 @@ import pandas as pd
 from app.llm.gemini import generate
 from app.tools.serializer import convert_to_serializable
 
+# These are honest message responses from the SQL agent
+HONEST_MESSAGES = [
+    "not available in the database schema",
+    "requested metric is not available",
+    "requested data is not available",
+]
+
+
+def _is_honest_message(df: pd.DataFrame) -> bool:
+    """
+    Detects if the SQL agent returned an honest
+    'data not available' message instead of real data.
+    """
+    if df.empty or len(df.columns) != 1:
+        return False
+
+    col = df.columns[0]
+    if col.lower() != "message":
+        return False
+
+    value = str(df.iloc[0][col]).lower()
+    return any(msg in value for msg in HONEST_MESSAGES)
+
 
 def generate_answer(
     question: str,
     df: pd.DataFrame,
     analysis: dict,
 ) -> str:
-    """
-    Generates a business-focused answer from the final dataframe.
-    The df here is already grouped if grouping was applied.
-    """
     if df.empty or not analysis.get("has_data"):
         return "No data was found to answer this question."
 
+    # Return honest message directly without LLM
+    if _is_honest_message(df):
+        return str(df.iloc[0]["message"])
+
     stats = analysis.get("stats", {})
 
-    # If no numeric stats — data is categorical/grouped
-    # Return a natural language summary instead
+    # Categorical/grouped data
     if not stats:
         sample = convert_to_serializable(df.head(3).to_dict(orient="records"))
         total_groups = len(df)
@@ -38,7 +60,7 @@ Write a brief summary of these results."""
 
         return generate(prompt, system)
 
-    # Numeric data — use stats for the answer
+    # Numeric data
     data_summary = df.head(5).to_string(index=False)
     stats_str = json.dumps(
         convert_to_serializable(stats),
@@ -52,7 +74,9 @@ Rules:
 - Never invent or estimate numbers.
 - Be concise and business-focused.
 - Highlight the most important finding first.
-- 2 to 4 sentences maximum."""
+- 2 to 4 sentences maximum.
+- If the column names do not match the question exactly, say what data
+  was actually used rather than pretending it answers the question."""
 
     prompt = f"""Business Question: {question}
 
@@ -62,6 +86,7 @@ Query Results:
 Calculated Statistics:
 {stats_str}
 
-Write a clear business insight answering this question."""
+Write a clear business insight answering this question.
+If the data does not fully answer the question, say so clearly."""
 
     return generate(prompt, system)

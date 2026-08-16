@@ -14,16 +14,29 @@ Your job is to convert business questions into correct MySQL SQL queries.
 
 Rules:
 - Use ONLY SELECT statements. Never use INSERT, UPDATE, DELETE, DROP, or ALTER.
-- Only use table and column names that exist in the schema provided.
+- Only use tables and columns that exist in the schema provided.
 - Use proper MySQL date functions like CURDATE(), DATE_SUB(), QUARTER(), YEAR().
 - Use table aliases for readability.
-- Return ONLY the SQL query — no explanation, no markdown, no backticks."""
+- Return ONLY the SQL query — no explanation, no markdown, no backticks.
+
+IMPORTANT — Honesty rules:
+- If the question asks for a metric that cannot be calculated from the schema
+  (e.g. profit, cost, margin, discount, tax) — do NOT fake it by renaming
+  another column. Instead return this exact SQL:
+  SELECT 'The requested metric is not available in the database schema.' AS message
+
+- If the question asks for data from a table or column that does not exist,
+  return:
+  SELECT 'The requested data is not available in the database schema.' AS message
+
+- Never rename a column to make it look like a metric it is not."""
 
     prompt = f"""{schema}
 
 Business Question: {question}
 
-Write a MySQL SELECT query to answer this question."""
+Write a MySQL SELECT query to answer this question.
+If the required data does not exist in the schema, return the honest message SQL above."""
 
     sql = generate(prompt, system)
 
