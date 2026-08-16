@@ -1,7 +1,9 @@
-from app.tools.mysql_tool import MySQLTool
+from app.tools.db_factory import get_db
 
 def get_schema_for_prompt() -> str:
-    """Fetch live schema from MySQL for use in LLM prompts."""
-    tool = MySQLTool()
-    schema = tool.get_schema()
+    """
+    Fetches live schema from whichever database is configured in .env
+    """
+    db = get_db()
+    schema = db.get_schema()
     return f"DATABASE SCHEMA:\n\n{schema}"

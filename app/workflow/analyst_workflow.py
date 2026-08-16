@@ -3,7 +3,7 @@ from app.agents.planner import create_plan
 from app.tools.schema_tool import get_schema_for_prompt
 from app.agents.sql_agent import generate_sql
 from app.tools.sql_safety import validate_sql, filter_sensitive_columns
-from app.tools.mysql_tool import MySQLTool
+from app.tools.db_factory import get_db
 from app.agents.validator import validate_and_reflect
 from app.agents.analyst import analyze_results
 from app.agents.chart_agent import decide_chart
@@ -81,7 +81,7 @@ def run(question: str) -> dict:
 
             # ── mysql_tool + reflection loop ─────────────────
             elif tool == "mysql_tool":
-                db = MySQLTool()
+                db = get_db()
                 exec_error = None
 
                 for attempt in range(1, MAX_SQL_ATTEMPTS + 1):
