@@ -1,5 +1,6 @@
 from app.tools.db_factory import get_db
 
+
 def get_schema_for_prompt() -> str:
     """
     Fetches live schema from whichever database is configured in .env

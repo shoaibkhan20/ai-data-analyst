@@ -5,12 +5,8 @@ load_dotenv()
 
 
 class Config:
-    # Gemini
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-
-    # Database type
     DB_TYPE: str = os.getenv("DB_TYPE", "mysql").lower()
-
     # MySQL
     MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
     MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
