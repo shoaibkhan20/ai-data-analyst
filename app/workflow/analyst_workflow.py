@@ -1,4 +1,6 @@
+import json
 import pandas as pd
+from typing import Generator
 from app.agents.planner import create_plan
 from app.tools.schema_tool import get_schema_for_prompt
 from app.agents.sql_agent import generate_sql
@@ -9,18 +11,25 @@ from app.agents.analyst import analyze_results
 from app.agents.chart_agent import decide_chart
 from app.agents.answer_agent import generate_answer
 from app.tools.serializer import serialize_dataframe, convert_to_serializable
+
 MAX_SQL_ATTEMPTS = 3
 
-def run(question: str) -> dict:
-    plan = create_plan(question)
+
+def stream(question: str) -> Generator[str, None, None]:
+    """
+    Generator that yields each pipeline step as SSE data.
+    Frontend receives live updates as each agent completes.
+    """
+
+    def event(data: dict) -> str:
+        """Format dict as SSE message."""
+        return f"data: {json.dumps(convert_to_serializable(data))}\n\n"
 
     context = {
-        "question": question,
-        # "plan": plan,
         "sql": None,
         "safety": None,
-        "raw_df": pd.DataFrame(),       # flat rows from DB
-        "final_df": pd.DataFrame(),     # grouped or flat — single source of truth
+        "raw_df": pd.DataFrame(),
+        "final_df": pd.DataFrame(),
         "analysis": {},
         "chart": {},
         "answer": None,
@@ -30,30 +39,61 @@ def run(question: str) -> dict:
         "error": None,
     }
 
-    trace = []
+    # ── Step 0: Planner ─────────────────────────────────────
+    yield event({
+        "type": "step",
+        "step": 0,
+        "name": "Planner",
+        "status": "running",
+    })
 
+    plan = create_plan(question)
+
+    yield event({
+        "type": "step",
+        "step": 0,
+        "name": "Planner",
+        "status": "done",
+        "requires_visualization": plan["requires_visualization"],
+        "total_steps": plan["total_steps"],
+    })
+
+    # ── Execute each step ────────────────────────────────────
     for step in plan["steps"]:
         tool = step["tool"]
         step_num = step["step"]
         step_name = step["name"]
 
-        trace.append({
+        yield event({
+            "type": "step",
             "step": step_num,
             "name": step_name,
-            "status": "running"
+            "status": "running",
         })
+
         try:
+
             # ── schema_tool ─────────────────────────────────
             if tool == "schema_tool":
                 get_schema_for_prompt()
-                trace[-1]["status"] = "done"
+                yield event({
+                    "type": "step",
+                    "step": step_num,
+                    "name": step_name,
+                    "status": "done",
+                })
 
             # ── sql_agent ───────────────────────────────────
             elif tool == "sql_agent":
                 context["sql"] = generate_sql(question)
                 context["sql_attempts"] = 1
-                trace[-1]["status"] = "done"
-                trace[-1]["attempt"] = 1
+                yield event({
+                    "type": "step",
+                    "step": step_num,
+                    "name": step_name,
+                    "status": "done",
+                    "sql": context["sql"],
+                })
 
             # ── sql_safety ──────────────────────────────────
             elif tool == "sql_safety":
@@ -61,12 +101,22 @@ def run(question: str) -> dict:
                 context["safety"] = {"passed": is_safe, "reason": reason}
 
                 if not is_safe:
-                    trace[-1]["status"] = "blocked"
-                    trace[-1]["reason"] = reason
+                    yield event({
+                        "type": "step",
+                        "step": step_num,
+                        "name": step_name,
+                        "status": "blocked",
+                        "reason": reason,
+                    })
                     context["error"] = f"SQL blocked: {reason}"
                     break
 
-                trace[-1]["status"] = "done"
+                yield event({
+                    "type": "step",
+                    "step": step_num,
+                    "name": step_name,
+                    "status": "done",
+                })
 
             # ── mysql_tool + reflection loop ─────────────────
             elif tool == "mysql_tool":
@@ -97,66 +147,117 @@ def run(question: str) -> dict:
                         context["raw_df"] = raw_df
                         context["row_count"] = result.get("row_count", 0)
                         context["execution_time_ms"] = result.get("execution_time_ms", 0)
-                        trace[-1]["status"] = "done"
-                        trace[-1]["rows_returned"] = result.get("row_count", 0)
-                        trace[-1]["attempts"] = attempt
+
+                        yield event({
+                            "type": "step",
+                            "step": step_num,
+                            "name": step_name,
+                            "status": "done",
+                            "rows_returned": result.get("row_count", 0),
+                            "attempts": attempt,
+                            "execution_time_ms": result.get("execution_time_ms", 0),
+                        })
                         break
 
                     elif attempt < MAX_SQL_ATTEMPTS:
-                        trace[-1]["status"] = f"retrying (attempt {attempt})"
-                        trace[-1]["retry_reason"] = reflection["reason"]
+                        yield event({
+                            "type": "step",
+                            "step": step_num,
+                            "name": step_name,
+                            "status": f"retrying",
+                            "attempt": attempt,
+                            "reason": reflection["reason"],
+                            "refined_sql": reflection["refined_sql"],
+                        })
                         context["sql"] = reflection["refined_sql"]
 
                         is_safe, reason = validate_sql(context["sql"])
                         if not is_safe:
+                            yield event({
+                                "type": "step",
+                                "step": step_num,
+                                "name": step_name,
+                                "status": "blocked",
+                                "reason": reason,
+                            })
                             context["error"] = f"Refined SQL blocked: {reason}"
-                            trace[-1]["status"] = "blocked"
                             break
                     else:
                         context["raw_df"] = raw_df
                         context["row_count"] = 0
-                        trace[-1]["status"] = "max_attempts_reached"
-                        trace[-1]["attempts"] = attempt
+                        yield event({
+                            "type": "step",
+                            "step": step_num,
+                            "name": step_name,
+                            "status": "max_attempts_reached",
+                            "attempts": attempt,
+                        })
 
             # ── analyst_agent ────────────────────────────────
             elif tool == "analyst_agent":
                 analysis = analyze_results(context["raw_df"], question)
-
-                # final_df is the single source of truth going forward
                 context["final_df"] = analysis.pop("final_df")
                 context["analysis"] = analysis
-                trace[-1]["status"] = "done"
+
+                yield event({
+                    "type": "step",
+                    "step": step_num,
+                    "name": step_name,
+                    "status": "done",
+                    "stats": analysis.get("stats", {}),
+                    "row_count": analysis.get("row_count", 0),
+                })
 
             # ── chart_agent ──────────────────────────────────
             elif tool == "chart_agent":
                 context["chart"] = decide_chart(
                     question,
-                    context["final_df"]   # uses final_df not raw_df
+                    context["final_df"]
                 )
-                trace[-1]["status"] = "done"
+                yield event({
+                    "type": "step",
+                    "step": step_num,
+                    "name": step_name,
+                    "status": "done",
+                    "chart_type": context["chart"].get("spec", {}).get("chart_type"),
+                })
 
             # ── answer_agent ─────────────────────────────────
             elif tool == "answer_agent":
                 context["answer"] = generate_answer(
                     question,
-                    context["final_df"],  # uses final_df not raw_df
+                    context["final_df"],
                     context["analysis"]
                 )
-                trace[-1]["status"] = "done"
+                yield event({
+                    "type": "step",
+                    "step": step_num,
+                    "name": step_name,
+                    "status": "done",
+                })
 
         except Exception as e:
-            trace[-1]["status"] = "error"
-            trace[-1]["error"] = str(e)
+            yield event({
+                "type": "step",
+                "step": step_num,
+                "name": step_name,
+                "status": "error",
+                "error": str(e),
+            })
             context["error"] = str(e)
             break
 
-    # ── Build final response ─────────────────────────────────
-    final_df = context["final_df"]
-    raw_data = serialize_dataframe(final_df)
-    clean_data, removed_columns = filter_sensitive_columns(raw_data)
+  # ── Build final response ─────────────────────────────────
+    try:
+        final_df = context["final_df"]
+        raw_data = serialize_dataframe(final_df)
+        clean_data, _ = filter_sensitive_columns(raw_data)
+    except Exception as e:
+        print(f"DEBUG final block error: {e}")
+        clean_data = []
 
-    analysis = context["analysis"]
-    return convert_to_serializable({
+    final_event = convert_to_serializable({
+        "type": "final",
         "success": context["error"] is None,
         "question": question,
         "answer": context["answer"],
@@ -165,7 +266,24 @@ def run(question: str) -> dict:
         "execution_time_ms": context["execution_time_ms"],
         "sql": context["sql"],
         "chart": context["chart"],
-        "stats": analysis.get("stats", {}),
-        "trace": trace,
+        "stats": context["analysis"].get("stats", {}),
         "error": context["error"],
     })
+
+    yield f"data: {json.dumps(final_event)}\n\n"
+    yield "data: {\"type\": \"done\"}\n\n"
+
+def run(question: str) -> dict:
+    """
+    Non-streaming version — collects all stream events
+    and returns the final result dict.
+    Used by /api/analyze endpoint.
+    """
+    final_result = {}
+    for event_str in stream(question):
+        # Parse each SSE message
+        if event_str.startswith("data: "):
+            data = json.loads(event_str[6:])
+            if data.get("type") == "final":
+                final_result = data
+    return final_result
