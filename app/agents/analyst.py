@@ -4,14 +4,31 @@ from app.llm.gemini import generate
 from app.tools.serializer import convert_to_serializable
 
 
+def _is_id_column(col_name: str) -> bool:
+    """
+    Detects if a column is an ID/key column that should
+    not be included in stats calculations.
+    """
+    col_lower = col_name.lower()
+    return (
+        col_lower.endswith("id") or
+        col_lower.endswith("_id") or
+        col_lower == "id"
+    )
+
+
 def _calculate_stats(df: pd.DataFrame) -> dict:
     """
     Pure Python stats — never use LLM for math.
+    Skips ID columns automatically.
     """
     stats = {}
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
     for col in numeric_cols:
+        if _is_id_column(col):
+            continue  # skip ID columns
+
         stats[col] = {
             "total": round(float(df[col].sum()), 2),
             "average": round(float(df[col].mean()), 2),
@@ -88,6 +105,10 @@ def analyze_results(df: pd.DataFrame, question: str = "") -> dict:
             "final_df": df,
         }
 
+    # Debug — remove after fixing
+    print(f"DEBUG columns: {list(df.columns)}")
+    print(f"DEBUG dtypes:\n{df.dtypes}")
+    print(f"DEBUG head:\n{df.head(2)}")
     # Always calculate stats with Python
     stats = _calculate_stats(df)
 
