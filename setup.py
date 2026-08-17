@@ -8,7 +8,7 @@ setup(
     install_requires=[],
     entry_points={
         "console_scripts": [
-            "data-analyst=cli:main",
+            "query-mind=cli:main",
         ],
     },
 )

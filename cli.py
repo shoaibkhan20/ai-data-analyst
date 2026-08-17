@@ -100,7 +100,7 @@ def run_question(question: str):
 def interactive_mode():
     """Run in interactive loop."""
     print("\n" + "=" * 60)
-    print("  AI Data Analyst — Terminal Mode")
+    print("  Query Mind — Terminal Mode")
     print("  Type your question and press Enter.")
     print("  Type 'exit' or 'quit' to stop.")
     print("=" * 60)
@@ -126,8 +126,8 @@ def interactive_mode():
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="data-analyst",
-        description="AI Data Analyst — Ask business questions in plain English",
+        prog="query-mind",
+        description="AI Data Analysis Agent — Ask business questions in plain English",
     )
 
     parser.add_argument(
