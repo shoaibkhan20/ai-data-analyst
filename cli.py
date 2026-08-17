@@ -1,7 +1,12 @@
 import sys
-import json
-from app.workflow.analyst_workflow import stream
+import os
 
+# Must be BEFORE any app imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import json
+import argparse
+from app.workflow.analyst_workflow import stream
 
 def print_step(data: dict):
     """Print each step in a readable format."""
@@ -10,20 +15,18 @@ def print_step(data: dict):
         name = data["name"]
         step = data["step"]
 
-        # Status colors using ANSI codes
         colors = {
-            "RUNNING": "\033[93m",   # yellow
-            "DONE": "\033[92m",      # green
-            "ERROR": "\033[91m",     # red
-            "BLOCKED": "\033[91m",   # red
-            "RETRYING": "\033[94m",  # blue
+            "RUNNING": "\033[93m",
+            "DONE": "\033[92m",
+            "ERROR": "\033[91m",
+            "BLOCKED": "\033[91m",
+            "RETRYING": "\033[94m",
         }
         reset = "\033[0m"
         color = colors.get(status, "")
 
         print(f"  {color}[{status}]{reset} Step {step} — {name}")
 
-        # Print extra info if available
         if data.get("sql"):
             print(f"           SQL: {data['sql'][:120]}...")
         if data.get("rows_returned") is not None:
@@ -50,7 +53,6 @@ def print_step(data: dict):
         print(f"\n  Answer:\n  {data.get('answer', 'No answer generated')}")
         print(f"\n  Rows returned: {data.get('row_count', 0)}")
         print(f"  Execution time: {data.get('execution_time_ms', 0)}ms")
-        print(f"  SQL attempts: {data.get('sql_attempts', 1)}")
 
         if data.get("sql"):
             print(f"\n  SQL:\n  {data['sql']}")
@@ -96,7 +98,7 @@ def run_question(question: str):
 
 
 def interactive_mode():
-    """Run in interactive loop — keep asking questions."""
+    """Run in interactive loop."""
     print("\n" + "=" * 60)
     print("  AI Data Analyst — Terminal Mode")
     print("  Type your question and press Enter.")
@@ -122,12 +124,34 @@ def interactive_mode():
             break
 
 
-if __name__ == "__main__":
-    # If question passed as argument — run once
-    if len(sys.argv) > 1:
-        question = " ".join(sys.argv[1:])
-        run_question(question)
+def main():
+    parser = argparse.ArgumentParser(
+        prog="data-analyst",
+        description="AI Data Analyst — Ask business questions in plain English",
+    )
 
-    # Otherwise run in interactive mode
-    else:
+    parser.add_argument(
+        "question",
+        nargs="?",
+        help="Business question to ask (e.g. 'how many artists are in the database')",
+    )
+
+    parser.add_argument(
+        "-i", "--interactive",
+        action="store_true",
+        help="Run in interactive mode — keep asking questions",
+    )
+
+    args = parser.parse_args()
+
+    if args.interactive:
         interactive_mode()
+    elif args.question:
+        run_question(args.question)
+    else:
+        # No arguments — default to interactive mode
+        interactive_mode()
+
+
+if __name__ == "__main__":
+    main()
