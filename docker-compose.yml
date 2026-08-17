@@ -1,0 +1,82 @@
+services:
+
+  # ── AI Data Analyst API ──────────────────────────────────────
+  api:
+    build: .
+    container_name: ai-data-analyst-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override DB host to use Docker service name
+      # Only applies when DB_TYPE=mysql and using the mysql service below
+      MYSQL_HOST: mysql
+      POSTGRES_HOST: postgres
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      # Mount .env and SQLite file if using SQLite
+      - ./database.db:/app/database.db
+    restart: unless-stopped
+    networks:
+      - analyst-network
+
+  # ── MySQL Database ───────────────────────────────────────────
+  # Only used when DB_TYPE=mysql and you want Docker to manage MySQL
+  # Skip this service if connecting to an external MySQL server
+  mysql:
+    image: mysql:8.4
+    container_name: ai-data-analyst-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sales_db}
+      MYSQL_USER: ${MYSQL_USER:-analyst_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-analyst123}
+    ports:
+      - "3307:3306"      # exposed on 3307 to avoid conflicts with local MySQL
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # optional seed file
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - analyst-network
+
+  # ── PostgreSQL Database ──────────────────────────────────────
+  # Only used when DB_TYPE=postgres and you want Docker to manage PostgreSQL
+  # Skip this service if connecting to an external PostgreSQL server
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-data-analyst-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:-sales_db}
+      POSTGRES_USER: ${POSTGRES_USER:-analyst_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-analyst123}
+    ports:
+      - "5433:5432"      # exposed on 5433 to avoid conflicts with local PostgreSQL
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-analyst_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - analyst-network
+
+# ── Volumes ───────────────────────────────────────────────────
+volumes:
+  mysql_data:
+  postgres_data:
+
+# ── Networks ──────────────────────────────────────────────────
+networks:
+  analyst-network:
+    driver: bridge
