@@ -193,7 +193,7 @@ User Question
 ## Project Structure
 
 ```
-ai-data-analyst/
+Query-Mind/
 │
 ├── app/
 │   ├── main.py                    # FastAPI app and all endpoints
@@ -239,8 +239,8 @@ ai-data-analyst/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourname/ai-data-analyst.git
-cd ai-data-analyst
+git clone https://github.com/yourname/Query-Mind.git
+cd Query-Mind
 ```
 
 ### 2. Create virtual environment
