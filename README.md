@@ -1,4 +1,4 @@
-# AI Data Analyst 🤖
+# QueryMind 🤖
 
 An agentic AI system that converts natural language business questions into SQL queries, executes them against your database, and returns data insights, statistics, and visualizations — all in real time.
 
@@ -29,7 +29,7 @@ Built with Python, FastAPI, Google Gemini, and Pandas. Supports MySQL, PostgreSQ
 ## Demo
 
 ```bash
-$ data-analyst "which artist generated the most revenue?"
+$ query-mind "which artist generated the most revenue?"
 
   [DONE] Step 0 — Planner
   [DONE] Step 1 — fetch_schema
@@ -225,7 +225,7 @@ Query-Mind/
 │       └── analyst_workflow.py    # Full pipeline — streaming and non-streaming
 │
 ├── cli.py                         # Terminal interface
-├── setup.py                       # Registers data-analyst CLI command
+├── setup.py                       # Registers query-mind CLI command
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
@@ -344,20 +344,20 @@ uvicorn app.main:app --reload
 ### Terminal — Single question
 
 ```bash
-data-analyst "which genre has the most tracks?"
+query-mind "which genre has the most tracks?"
 ```
 
 ### Terminal — Interactive mode
 
 ```bash
-data-analyst --interactive
-data-analyst -i
+query-mind --interactive
+query-mind -i
 ```
 
 ### Terminal — Help
 
 ```bash
-data-analyst --help
+query-mind --help
 ```
 
 ### HTML Test Page
@@ -618,7 +618,7 @@ Run the full stack with Docker — no local Python setup needed.
 ### Files
 
 ```
-ai-data-analyst/
+Query-Mind/
 ├── Dockerfile              # builds the API image
 ├── docker-compose.yml      # runs API + MySQL + PostgreSQL
 └── .dockerignore           # excludes venv, .env, cache
@@ -713,10 +713,10 @@ docker compose down -v
 docker compose up --build api
 
 # Open a shell inside the container
-docker exec -it ai-data-analyst-api bash
+docker exec -it query-mind-api bash
 
 # Run CLI inside container
-docker exec -it ai-data-analyst-api data-analyst "how many artists?"
+docker exec -it query-mind-api query-mind "how many artists?"
 ```
 
 ---
